@@ -2,31 +2,56 @@ name: Generate image indexes
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: write
 
 jobs:
   build-index:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Generate index.json files
+      - name: Generate index.json in every images folder
+        shell: bash
         run: |
+          set -e
           echo "Generating index.json files..."
 
-          for dir in $(find . -type d -name images); do
+          # Zoek elke map die exact 'images' heet
+          while IFS= read -r dir; do
             echo "Processing $dir"
-            files=$(ls "$dir" | grep -E '\.(jpg|jpeg|png|webp)$' | sort | sed 's/^/"/;s/$/"/' | paste -sd "," -)
-            echo "{ \"files\": [ $files ] }" > "$dir/index.json"
-          done
 
-      - name: Commit changes
+            files=$(ls -1 "$dir" 2>/dev/null \
+              | grep -E '\.(jpg|jpeg|png|webp)$' \
+              | sort \
+              | sed 's/^/"/;s/$/"/' \
+              | paste -sd "," -)
+
+            if [ -z "$files" ]; then
+              echo '{ "files": [] }' > "$dir/index.json"
+            else
+              echo "{ \"files\": [ $files ] }" > "$dir/index.json"
+            fi
+          done < <(find . -type d -name images)
+
+      - name: Commit & push changes (if any)
+        shell: bash
         run: |
+          set -e
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add **/index.json
-          git diff --cached --quiet || git commit -m "Auto-generate image index.json"
+
+          # Voeg alle index.json bestanden toe die we net maakten
+          find . -name index.json -print0 | xargs -0 git add
+
+          # Commit alleen als er echt iets veranderd is
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Auto-generate image index.json"
           git push

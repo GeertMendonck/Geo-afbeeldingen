@@ -1,0 +1,32 @@
+name: Generate image indexes
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate index.json files
+        run: |
+          echo "Generating index.json files..."
+
+          for dir in $(find . -type d -name images); do
+            echo "Processing $dir"
+            files=$(ls "$dir" | grep -E '\.(jpg|jpeg|png|webp)$' | sort | sed 's/^/"/;s/$/"/' | paste -sd "," -)
+            echo "{ \"files\": [ $files ] }" > "$dir/index.json"
+          done
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add **/index.json
+          git diff --cached --quiet || git commit -m "Auto-generate image index.json"
+          git push

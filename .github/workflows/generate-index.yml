@@ -1,4 +1,4 @@
-name: Generate image indexes
+name: Generate asset indexes
 
 on:
   push:
@@ -11,31 +11,40 @@ jobs:
   build-index:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Generate index.json in every images folder
+      - name: Generate index.json for images & personages folders
         shell: bash
         run: |
           set -e
           echo "Generating index.json files..."
 
-          # Zoek elke map die exact 'images' heet
-          while IFS= read -r dir; do
-            echo "Processing $dir"
+          gen_index () {
+            folder_name="$1"   # images of personages
+            exts_regex="$2"    # bv. '\.(jpg|png)$'
 
-            files=$(ls -1 "$dir" 2>/dev/null \
-              | grep -E '\.(jpg|jpeg|png|webp)$' \
-              | sort \
-              | sed 's/^/"/;s/$/"/' \
-              | paste -sd "," -)
+            find . -type d -name "$folder_name" | while read -r dir; do
+              echo "Processing $dir"
 
-            if [ -z "$files" ]; then
-              echo '{ "files": [] }' > "$dir/index.json"
-            else
-              echo "{ \"files\": [ $files ] }" > "$dir/index.json"
-            fi
-          done < <(find . -type d -name images)
+              files=$(ls -1 "$dir" 2>/dev/null \
+                | grep -E "$exts_regex" \
+                | sort \
+                | sed 's/^/"/;s/$/"/' \
+                | paste -sd "," -)
+
+              if [ -z "$files" ]; then
+                echo '{ "files": [] }' > "$dir/index.json"
+              else
+                echo "{ \"files\": [ $files ] }" > "$dir/index.json"
+              fi
+            done
+          }
+
+          # images: typische fotoformaten
+          gen_index "images" '\.(jpg|jpeg|png|webp)$'
+
+          # personages: vaak png/webp, maar laat jpg ook toe (sepia avatars etc.)
+          gen_index "personages" '\.(png|webp|jpg|jpeg)$'
 
       - name: Commit & push changes (if any)
         shell: bash
@@ -44,14 +53,12 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          # Voeg alle index.json bestanden toe die we net maakten
           find . -name index.json -print0 | xargs -0 git add
 
-          # Commit alleen als er echt iets veranderd is
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
 
-          git commit -m "Auto-generate image index.json"
+          git commit -m "Auto-generate asset index.json"
           git push
